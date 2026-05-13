@@ -109,9 +109,17 @@ export default function ChatPage() {
   }
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    console.log('[v0] handleFileSelect triggered')
     const files = e.target.files
-    if (files) {
-      setAttachedFiles(prev => [...prev, ...Array.from(files)])
+    console.log('[v0] files selected:', files?.length, files)
+    if (files && files.length > 0) {
+      const fileArray = Array.from(files)
+      console.log('[v0] adding files:', fileArray.map(f => f.name))
+      setAttachedFiles(prev => {
+        const newFiles = [...prev, ...fileArray]
+        console.log('[v0] new attachedFiles count:', newFiles.length)
+        return newFiles
+      })
     }
     if (fileInputRef.current) {
       fileInputRef.current.value = ''
