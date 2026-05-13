@@ -256,7 +256,7 @@ export default function HomePage() {
           textAlign: 'center',
           marginBottom: '40px'
         }}>
-          Explora ejemplos y casos de uso de MuyMuy AI
+          Explora ejemplos y casos de uso de CodeBrain AI
         </p>
         
         {loading ? (
@@ -344,7 +344,7 @@ export default function HomePage() {
         marginTop: '40px'
       }}>
         <p style={{ color: '#525252', fontSize: '14px' }}>
-          MuyMuy AI - Chat Cifrado con CoreHub
+          CodeBrain AI - Chat Cifrado con CoreHub
         </p>
       </footer>
 

@@ -17,6 +17,146 @@ import {
 } from '@/lib/chat-store'
 import { sendMessage } from '@/lib/api'
 
+const LANGUAGE_COLORS: Record<string, { bg: string; border: string; label: string }> = {
+  javascript: { bg: '#1a1a0a', border: '#3d3d00', label: '#f7df1e' },
+  js: { bg: '#1a1a0a', border: '#3d3d00', label: '#f7df1e' },
+  typescript: { bg: '#0a1a2a', border: '#004080', label: '#3178c6' },
+  ts: { bg: '#0a1a2a', border: '#004080', label: '#3178c6' },
+  tsx: { bg: '#0a1a2a', border: '#004080', label: '#3178c6' },
+  jsx: { bg: '#1a1a0a', border: '#3d3d00', label: '#f7df1e' },
+  python: { bg: '#0a1a1a', border: '#004040', label: '#3776ab' },
+  py: { bg: '#0a1a1a', border: '#004040', label: '#3776ab' },
+  html: { bg: '#1a0a0a', border: '#400000', label: '#e34c26' },
+  css: { bg: '#0a0a1a', border: '#000040', label: '#264de4' },
+  json: { bg: '#1a1a1a', border: '#333333', label: '#888888' },
+  bash: { bg: '#0a1a0a', border: '#004000', label: '#4eaa25' },
+  sh: { bg: '#0a1a0a', border: '#004000', label: '#4eaa25' },
+  sql: { bg: '#1a1a1a', border: '#333333', label: '#e38c00' },
+  rust: { bg: '#1a0a0a', border: '#400000', label: '#ce422b' },
+  go: { bg: '#0a1a1a', border: '#004040', label: '#00add8' },
+  java: { bg: '#1a0a0a', border: '#400000', label: '#b07219' },
+  cpp: { bg: '#0a0a1a', border: '#000040', label: '#00599c' },
+  c: { bg: '#0a0a1a', border: '#000040', label: '#555555' },
+  php: { bg: '#0a0a1a', border: '#000040', label: '#777bb4' },
+  ruby: { bg: '#1a0a0a', border: '#400000', label: '#cc342d' },
+  yaml: { bg: '#1a1a1a', border: '#333333', label: '#cb171e' },
+  yml: { bg: '#1a1a1a', border: '#333333', label: '#cb171e' },
+  markdown: { bg: '#1a1a1a', border: '#333333', label: '#ffffff' },
+  md: { bg: '#1a1a1a', border: '#333333', label: '#ffffff' },
+}
+
+function renderMessageContent(content: string, isUser: boolean) {
+  if (isUser) {
+    return (
+      <div style={{
+        background: '#1a1a1a',
+        border: '1px solid #2a2a2a',
+        borderRadius: '12px',
+        padding: '14px 18px',
+        fontSize: '14px',
+        color: '#e5e5e5',
+        lineHeight: '1.7',
+        whiteSpace: 'pre-wrap',
+        wordBreak: 'break-word'
+      }}>
+        {content}
+      </div>
+    )
+  }
+
+  const parts: React.ReactNode[] = []
+  const codeBlockRegex = /```(\w+)?\n([\s\S]*?)```/g
+  let lastIndex = 0
+  let match
+  let keyIndex = 0
+
+  while ((match = codeBlockRegex.exec(content)) !== null) {
+    if (match.index > lastIndex) {
+      const textBefore = content.slice(lastIndex, match.index)
+      parts.push(
+        <span key={keyIndex++} style={{ whiteSpace: 'pre-wrap' }}>
+          {textBefore}
+        </span>
+      )
+    }
+
+    const language = (match[1] || 'code').toLowerCase()
+    const code = match[2]
+    const colors = LANGUAGE_COLORS[language] || { bg: '#141414', border: '#2a2a2a', label: '#737373' }
+
+    parts.push(
+      <div key={keyIndex++} style={{
+        margin: '12px 0',
+        borderRadius: '10px',
+        overflow: 'hidden',
+        border: `1px solid ${colors.border}`,
+        background: colors.bg
+      }}>
+        <div style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          padding: '8px 14px',
+          background: 'rgba(0,0,0,0.3)',
+          borderBottom: `1px solid ${colors.border}`
+        }}>
+          <span style={{
+            fontSize: '12px',
+            fontWeight: '600',
+            color: colors.label,
+            textTransform: 'uppercase',
+            letterSpacing: '0.5px'
+          }}>
+            {language}
+          </span>
+          <button
+            onClick={() => navigator.clipboard.writeText(code)}
+            style={{
+              background: 'transparent',
+              border: 'none',
+              color: '#666',
+              cursor: 'pointer',
+              fontSize: '11px',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '4px'
+            }}
+          >
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
+              <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+            </svg>
+            Copiar
+          </button>
+        </div>
+        <pre style={{
+          margin: 0,
+          padding: '14px',
+          overflow: 'auto',
+          fontSize: '13px',
+          lineHeight: '1.6',
+          fontFamily: 'ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace',
+          color: '#d4d4d4'
+        }}>
+          <code>{code}</code>
+        </pre>
+      </div>
+    )
+
+    lastIndex = match.index + match[0].length
+  }
+
+  if (lastIndex < content.length) {
+    parts.push(
+      <span key={keyIndex++} style={{ whiteSpace: 'pre-wrap' }}>
+        {content.slice(lastIndex)}
+      </span>
+    )
+  }
+
+  return parts.length > 0 ? parts : content
+}
+
 interface ContextMenuState {
   visible: boolean
   x: number
@@ -109,17 +249,9 @@ export default function ChatPage() {
   }
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    console.log('[v0] handleFileSelect triggered')
     const files = e.target.files
-    console.log('[v0] files selected:', files?.length, files)
     if (files && files.length > 0) {
-      const fileArray = Array.from(files)
-      console.log('[v0] adding files:', fileArray.map(f => f.name))
-      setAttachedFiles(prev => {
-        const newFiles = [...prev, ...fileArray]
-        console.log('[v0] new attachedFiles count:', newFiles.length)
-        return newFiles
-      })
+      setAttachedFiles(prev => [...prev, ...Array.from(files)])
     }
     if (fileInputRef.current) {
       fileInputRef.current.value = ''
@@ -808,10 +940,9 @@ export default function ChatPage() {
                       fontSize: '14px',
                       color: '#a3a3a3',
                       lineHeight: '1.7',
-                      whiteSpace: 'pre-wrap',
                       wordBreak: 'break-word'
                     }}>
-                      {message.content}
+                      {renderMessageContent(message.content, message.role === 'user')}
                     </div>
                   )}
                 </div>

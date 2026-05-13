@@ -1,7 +1,7 @@
 import { Chat, Message, UserSettings } from './types'
 
-const CHATS_KEY = 'muymuy_chats'
-const SETTINGS_KEY = 'muymuy_settings'
+const CHATS_KEY = 'codebrain_chats'
+const SETTINGS_KEY = 'codebrain_settings'
 
 export function generateId(): string {
   return Math.random().toString(36).substring(2, 15) + Date.now().toString(36)
