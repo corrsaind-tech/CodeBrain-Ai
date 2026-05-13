@@ -589,27 +589,29 @@ export default function ChatPage() {
                         gap: '8px',
                         marginTop: '12px'
                       }}>
-                        <button
-                          onClick={() => handleEditMessage(message)}
-                          style={{
-                            padding: '6px 10px',
-                            background: 'transparent',
-                            border: '1px solid #2a2a2a',
-                            borderRadius: '6px',
-                            color: '#737373',
-                            cursor: 'pointer',
-                            fontSize: '12px',
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '4px'
-                          }}
-                        >
-                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                            <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
-                            <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
-                          </svg>
-                          Editar
-                        </button>
+                        {message.role === 'user' && (
+                          <button
+                            onClick={() => handleEditMessage(message)}
+                            style={{
+                              padding: '6px 10px',
+                              background: 'transparent',
+                              border: '1px solid #2a2a2a',
+                              borderRadius: '6px',
+                              color: '#737373',
+                              cursor: 'pointer',
+                              fontSize: '12px',
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '4px'
+                            }}
+                          >
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                              <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+                              <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+                            </svg>
+                            Editar
+                          </button>
+                        )}
                         {message.role === 'assistant' && (
                           <button
                             onClick={() => handleRegenerate(index)}
