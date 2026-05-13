@@ -17,6 +17,15 @@ import {
 } from '@/lib/chat-store'
 import { sendMessage } from '@/lib/api'
 
+interface ContextMenuState {
+  visible: boolean
+  x: number
+  y: number
+  messageId: string | null
+  messageIndex: number
+  messageRole: 'user' | 'assistant' | null
+}
+
 export default function ChatPage() {
   const [chats, setChats] = useState<Chat[]>([])
   const [currentChatId, setCurrentChatId] = useState<string | null>(null)
@@ -28,8 +37,18 @@ export default function ChatPage() {
   const [showSidebar, setShowSidebar] = useState(true)
   const [editingMessageId, setEditingMessageId] = useState<string | null>(null)
   const [editContent, setEditContent] = useState('')
+  const [attachedFiles, setAttachedFiles] = useState<File[]>([])
+  const [contextMenu, setContextMenu] = useState<ContextMenuState>({
+    visible: false,
+    x: 0,
+    y: 0,
+    messageId: null,
+    messageIndex: -1,
+    messageRole: null
+  })
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     const storedChats = getChats()
@@ -46,6 +65,12 @@ export default function ChatPage() {
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages])
+
+  useEffect(() => {
+    const handleClick = () => setContextMenu(prev => ({ ...prev, visible: false }))
+    document.addEventListener('click', handleClick)
+    return () => document.removeEventListener('click', handleClick)
+  }, [])
 
   const refreshChats = () => {
     const storedChats = getChats()
@@ -83,8 +108,39 @@ export default function ChatPage() {
     }
   }
 
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files
+    if (files) {
+      setAttachedFiles(prev => [...prev, ...Array.from(files)])
+    }
+    if (fileInputRef.current) {
+      fileInputRef.current.value = ''
+    }
+  }
+
+  const removeFile = (index: number) => {
+    setAttachedFiles(prev => prev.filter((_, i) => i !== index))
+  }
+
+  const readFileContent = async (file: File): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader()
+      reader.onload = () => {
+        const content = reader.result as string
+        resolve(content)
+      }
+      reader.onerror = reject
+      
+      if (file.type.startsWith('image/')) {
+        reader.readAsDataURL(file)
+      } else {
+        reader.readAsText(file)
+      }
+    })
+  }
+
   const handleSend = async () => {
-    if (!input.trim() || isLoading) return
+    if ((!input.trim() && attachedFiles.length === 0) || isLoading) return
 
     let chatId = currentChatId
     if (!chatId) {
@@ -94,21 +150,45 @@ export default function ChatPage() {
       refreshChats()
     }
 
+    let messageContent = input.trim()
+    
+    if (attachedFiles.length > 0) {
+      const fileContents: string[] = []
+      for (const file of attachedFiles) {
+        try {
+          const content = await readFileContent(file)
+          if (file.type.startsWith('image/')) {
+            fileContents.push(`[Imagen adjunta: ${file.name}]\n(Base64 data: ${content.substring(0, 100)}...)`)
+          } else {
+            fileContents.push(`--- Archivo: ${file.name} ---\n${content}\n--- Fin del archivo ---`)
+          }
+        } catch {
+          fileContents.push(`[Error leyendo archivo: ${file.name}]`)
+        }
+      }
+      
+      const filesText = fileContents.join('\n\n')
+      messageContent = messageContent 
+        ? `${messageContent}\n\n${filesText}` 
+        : filesText
+    }
+
     const userMessage: Message = {
       id: generateId(),
       role: 'user',
-      content: input.trim(),
+      content: messageContent,
       timestamp: Date.now()
     }
 
     addMessage(chatId, userMessage)
     setMessages(prev => [...prev, userMessage])
     setInput('')
+    setAttachedFiles([])
     setIsLoading(true)
     refreshChats()
 
     try {
-      const response = await sendMessage(userMessage.content, customPrompt || undefined)
+      const response = await sendMessage(messageContent, customPrompt || undefined)
       const assistantMessage: Message = {
         id: generateId(),
         role: 'assistant',
@@ -132,9 +212,25 @@ export default function ChatPage() {
     }
   }
 
-  const handleEditMessage = (message: Message) => {
-    setEditingMessageId(message.id)
-    setEditContent(message.content)
+  const handleContextMenu = (e: React.MouseEvent, message: Message, index: number) => {
+    e.preventDefault()
+    setContextMenu({
+      visible: true,
+      x: e.clientX,
+      y: e.clientY,
+      messageId: message.id,
+      messageIndex: index,
+      messageRole: message.role
+    })
+  }
+
+  const handleEditMessage = () => {
+    const message = messages.find(m => m.id === contextMenu.messageId)
+    if (message) {
+      setEditingMessageId(message.id)
+      setEditContent(message.content)
+    }
+    setContextMenu(prev => ({ ...prev, visible: false }))
   }
 
   const handleSaveEdit = async (messageId: string) => {
@@ -183,7 +279,8 @@ export default function ChatPage() {
     }
   }
 
-  const handleRegenerate = async (messageIndex: number) => {
+  const handleRegenerate = async () => {
+    const messageIndex = contextMenu.messageIndex
     if (!currentChatId || messageIndex < 1) return
 
     const userMessage = messages[messageIndex - 1]
@@ -191,6 +288,7 @@ export default function ChatPage() {
 
     removeMessagesFromIndex(currentChatId, messageIndex)
     setMessages(prev => prev.slice(0, messageIndex))
+    setContextMenu(prev => ({ ...prev, visible: false }))
     
     setIsLoading(true)
     try {
@@ -218,6 +316,14 @@ export default function ChatPage() {
     }
   }
 
+  const handleCopy = () => {
+    const message = messages.find(m => m.id === contextMenu.messageId)
+    if (message) {
+      navigator.clipboard.writeText(message.content)
+    }
+    setContextMenu(prev => ({ ...prev, visible: false }))
+  }
+
   const handleSaveSettings = () => {
     saveSettings({ customPrompt })
     setShowSettings(false)
@@ -236,6 +342,106 @@ export default function ChatPage() {
       height: '100vh',
       background: '#0a0a0a'
     }}>
+      {/* Context Menu */}
+      {contextMenu.visible && (
+        <div
+          style={{
+            position: 'fixed',
+            top: contextMenu.y,
+            left: contextMenu.x,
+            background: '#1a1a1a',
+            border: '1px solid #2a2a2a',
+            borderRadius: '8px',
+            padding: '4px',
+            zIndex: 2000,
+            minWidth: '150px',
+            boxShadow: '0 4px 20px rgba(0,0,0,0.5)'
+          }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          {contextMenu.messageRole === 'user' && (
+            <button
+              onClick={handleEditMessage}
+              style={{
+                width: '100%',
+                padding: '10px 12px',
+                background: 'transparent',
+                border: 'none',
+                borderRadius: '6px',
+                color: '#e5e5e5',
+                fontSize: '13px',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '10px',
+                textAlign: 'left'
+              }}
+              onMouseEnter={(e) => e.currentTarget.style.background = '#2a2a2a'}
+              onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+                <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+              </svg>
+              Editar
+            </button>
+          )}
+          {contextMenu.messageRole === 'assistant' && (
+            <button
+              onClick={handleRegenerate}
+              style={{
+                width: '100%',
+                padding: '10px 12px',
+                background: 'transparent',
+                border: 'none',
+                borderRadius: '6px',
+                color: '#e5e5e5',
+                fontSize: '13px',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '10px',
+                textAlign: 'left'
+              }}
+              onMouseEnter={(e) => e.currentTarget.style.background = '#2a2a2a'}
+              onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <polyline points="1 4 1 10 7 10"/>
+                <polyline points="23 20 23 14 17 14"/>
+                <path d="M20.49 9A9 9 0 0 0 5.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 0 1 3.51 15"/>
+              </svg>
+              Regenerar
+            </button>
+          )}
+          <button
+            onClick={handleCopy}
+            style={{
+              width: '100%',
+              padding: '10px 12px',
+              background: 'transparent',
+              border: 'none',
+              borderRadius: '6px',
+              color: '#e5e5e5',
+              fontSize: '13px',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '10px',
+              textAlign: 'left'
+            }}
+            onMouseEnter={(e) => e.currentTarget.style.background = '#2a2a2a'}
+            onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
+              <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+            </svg>
+            Copiar
+          </button>
+        </div>
+      )}
+
       {/* Sidebar */}
       <aside style={{
         width: showSidebar ? '280px' : '0',
@@ -420,15 +626,19 @@ export default function ChatPage() {
               width: '32px',
               height: '32px',
               borderRadius: '8px',
-              background: '#1a1a1a',
+              background: 'linear-gradient(135deg, #2a2a2a 0%, #1a1a1a 100%)',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              border: '1px solid #2a2a2a'
+              border: '1px solid #3a3a3a'
             }}>
-              <span style={{ fontSize: '16px', fontWeight: 'bold', color: '#e5e5e5' }}>M</span>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#e5e5e5" strokeWidth="2">
+                <path d="M12 2a2 2 0 0 1 2 2c0 .74-.4 1.39-1 1.73V7h1a7 7 0 0 1 7 7h1a1 1 0 0 1 1 1v3a1 1 0 0 1-1 1h-1v1a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-1H2a1 1 0 0 1-1-1v-3a1 1 0 0 1 1-1h1a7 7 0 0 1 7-7h1V5.73c-.6-.34-1-.99-1-1.73a2 2 0 0 1 2-2z"/>
+                <circle cx="7.5" cy="14.5" r="1.5"/>
+                <circle cx="16.5" cy="14.5" r="1.5"/>
+              </svg>
             </div>
-            <span style={{ fontSize: '16px', fontWeight: '500', color: '#e5e5e5' }}>MuyMuy AI</span>
+            <span style={{ fontSize: '16px', fontWeight: '600', color: '#e5e5e5' }}>CodeBrain AI</span>
           </div>
           {customPrompt && (
             <span style={{
@@ -463,37 +673,45 @@ export default function ChatPage() {
                 width: '64px',
                 height: '64px',
                 borderRadius: '16px',
-                background: '#141414',
+                background: 'linear-gradient(135deg, #2a2a2a 0%, #141414 100%)',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
                 marginBottom: '16px',
-                border: '1px solid #2a2a2a'
+                border: '1px solid #3a3a3a'
               }}>
-                <span style={{ fontSize: '32px', fontWeight: 'bold', color: '#404040' }}>M</span>
+                <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#505050" strokeWidth="2">
+                  <path d="M12 2a2 2 0 0 1 2 2c0 .74-.4 1.39-1 1.73V7h1a7 7 0 0 1 7 7h1a1 1 0 0 1 1 1v3a1 1 0 0 1-1 1h-1v1a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-1H2a1 1 0 0 1-1-1v-3a1 1 0 0 1 1-1h1a7 7 0 0 1 7-7h1V5.73c-.6-.34-1-.99-1-1.73a2 2 0 0 1 2-2z"/>
+                  <circle cx="7.5" cy="14.5" r="1.5"/>
+                  <circle cx="16.5" cy="14.5" r="1.5"/>
+                </svg>
               </div>
-              <p style={{ fontSize: '18px', marginBottom: '8px' }}>Comienza una conversación</p>
-              <p style={{ fontSize: '14px' }}>Escribe un mensaje para empezar</p>
+              <p style={{ fontSize: '18px', marginBottom: '8px', color: '#737373' }}>Comienza una conversacion</p>
+              <p style={{ fontSize: '14px', color: '#525252' }}>Escribe un mensaje o adjunta archivos para empezar</p>
+              <p style={{ fontSize: '12px', color: '#404040', marginTop: '16px' }}>Haz clic derecho en los mensajes para ver opciones</p>
             </div>
           ) : (
             messages.map((message, index) => (
               <div 
                 key={message.id}
+                onContextMenu={(e) => handleContextMenu(e, message, index)}
                 style={{
                   marginBottom: '24px',
                   display: 'flex',
-                  gap: '12px'
+                  gap: '12px',
+                  cursor: 'context-menu'
                 }}
               >
                 <div style={{
                   width: '32px',
                   height: '32px',
                   borderRadius: '8px',
-                  background: message.role === 'user' ? '#2a2a2a' : '#1a1a1a',
+                  background: message.role === 'user' ? '#2a2a2a' : 'linear-gradient(135deg, #2a2a2a 0%, #1a1a1a 100%)',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
-                  flexShrink: 0
+                  flexShrink: 0,
+                  border: message.role === 'assistant' ? '1px solid #3a3a3a' : 'none'
                 }}>
                   {message.role === 'user' ? (
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#a3a3a3" strokeWidth="2">
@@ -501,7 +719,11 @@ export default function ChatPage() {
                       <circle cx="12" cy="7" r="4"/>
                     </svg>
                   ) : (
-                    <span style={{ fontSize: '14px', fontWeight: 'bold', color: '#a3a3a3' }}>M</span>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#a3a3a3" strokeWidth="2">
+                      <path d="M12 2a2 2 0 0 1 2 2c0 .74-.4 1.39-1 1.73V7h1a7 7 0 0 1 7 7h1a1 1 0 0 1 1 1v3a1 1 0 0 1-1 1h-1v1a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-1H2a1 1 0 0 1-1-1v-3a1 1 0 0 1 1-1h1a7 7 0 0 1 7-7h1V5.73c-.6-.34-1-.99-1-1.73a2 2 0 0 1 2-2z"/>
+                      <circle cx="7.5" cy="14.5" r="1.5"/>
+                      <circle cx="16.5" cy="14.5" r="1.5"/>
+                    </svg>
                   )}
                 </div>
                 <div style={{ flex: 1, minWidth: 0 }}>
@@ -516,7 +738,7 @@ export default function ChatPage() {
                       fontWeight: '500',
                       color: '#e5e5e5'
                     }}>
-                      {message.role === 'user' ? 'Tú' : 'MuyMuy AI'}
+                      {message.role === 'user' ? 'Tu' : 'CodeBrain AI'}
                     </span>
                     <span style={{ fontSize: '12px', color: '#525252' }}>
                       {new Date(message.timestamp).toLocaleTimeString()}
@@ -574,91 +796,15 @@ export default function ChatPage() {
                       </div>
                     </div>
                   ) : (
-                    <>
-                      <div style={{
-                        fontSize: '14px',
-                        color: '#a3a3a3',
-                        lineHeight: '1.7',
-                        whiteSpace: 'pre-wrap',
-                        wordBreak: 'break-word'
-                      }}>
-                        {message.content}
-                      </div>
-                      <div style={{
-                        display: 'flex',
-                        gap: '8px',
-                        marginTop: '12px'
-                      }}>
-                        {message.role === 'user' && (
-                          <button
-                            onClick={() => handleEditMessage(message)}
-                            style={{
-                              padding: '6px 10px',
-                              background: 'transparent',
-                              border: '1px solid #2a2a2a',
-                              borderRadius: '6px',
-                              color: '#737373',
-                              cursor: 'pointer',
-                              fontSize: '12px',
-                              display: 'flex',
-                              alignItems: 'center',
-                              gap: '4px'
-                            }}
-                          >
-                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                              <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
-                              <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
-                            </svg>
-                            Editar
-                          </button>
-                        )}
-                        {message.role === 'assistant' && (
-                          <button
-                            onClick={() => handleRegenerate(index)}
-                            style={{
-                              padding: '6px 10px',
-                              background: 'transparent',
-                              border: '1px solid #2a2a2a',
-                              borderRadius: '6px',
-                              color: '#737373',
-                              cursor: 'pointer',
-                              fontSize: '12px',
-                              display: 'flex',
-                              alignItems: 'center',
-                              gap: '4px'
-                            }}
-                          >
-                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                              <polyline points="1 4 1 10 7 10"/>
-                              <polyline points="23 20 23 14 17 14"/>
-                              <path d="M20.49 9A9 9 0 0 0 5.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 0 1 3.51 15"/>
-                            </svg>
-                            Regenerar
-                          </button>
-                        )}
-                        <button
-                          onClick={() => navigator.clipboard.writeText(message.content)}
-                          style={{
-                            padding: '6px 10px',
-                            background: 'transparent',
-                            border: '1px solid #2a2a2a',
-                            borderRadius: '6px',
-                            color: '#737373',
-                            cursor: 'pointer',
-                            fontSize: '12px',
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '4px'
-                          }}
-                        >
-                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                            <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
-                            <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
-                          </svg>
-                          Copiar
-                        </button>
-                      </div>
-                    </>
+                    <div style={{
+                      fontSize: '14px',
+                      color: '#a3a3a3',
+                      lineHeight: '1.7',
+                      whiteSpace: 'pre-wrap',
+                      wordBreak: 'break-word'
+                    }}>
+                      {message.content}
+                    </div>
                   )}
                 </div>
               </div>
@@ -675,12 +821,17 @@ export default function ChatPage() {
                 width: '32px',
                 height: '32px',
                 borderRadius: '8px',
-                background: '#1a1a1a',
+                background: 'linear-gradient(135deg, #2a2a2a 0%, #1a1a1a 100%)',
                 display: 'flex',
                 alignItems: 'center',
-                justifyContent: 'center'
+                justifyContent: 'center',
+                border: '1px solid #3a3a3a'
               }}>
-                <span style={{ fontSize: '14px', fontWeight: 'bold', color: '#a3a3a3' }}>M</span>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#a3a3a3" strokeWidth="2">
+                  <path d="M12 2a2 2 0 0 1 2 2c0 .74-.4 1.39-1 1.73V7h1a7 7 0 0 1 7 7h1a1 1 0 0 1 1 1v3a1 1 0 0 1-1 1h-1v1a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-1H2a1 1 0 0 1-1-1v-3a1 1 0 0 1 1-1h1a7 7 0 0 1 7-7h1V5.73c-.6-.34-1-.99-1-1.73a2 2 0 0 1 2-2z"/>
+                  <circle cx="7.5" cy="14.5" r="1.5"/>
+                  <circle cx="16.5" cy="14.5" r="1.5"/>
+                </svg>
               </div>
               <div style={{
                 display: 'flex',
@@ -715,6 +866,52 @@ export default function ChatPage() {
           <div ref={messagesEndRef} />
         </div>
 
+        {/* Attached Files Preview */}
+        {attachedFiles.length > 0 && (
+          <div style={{
+            padding: '12px 24px',
+            borderTop: '1px solid #1a1a1a',
+            display: 'flex',
+            gap: '8px',
+            flexWrap: 'wrap'
+          }}>
+            {attachedFiles.map((file, index) => (
+              <div key={index} style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                padding: '8px 12px',
+                background: '#1a1a1a',
+                borderRadius: '8px',
+                border: '1px solid #2a2a2a'
+              }}>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#a3a3a3" strokeWidth="2">
+                  <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                  <polyline points="14 2 14 8 20 8"/>
+                </svg>
+                <span style={{ fontSize: '13px', color: '#a3a3a3', maxWidth: '150px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {file.name}
+                </span>
+                <button
+                  onClick={() => removeFile(index)}
+                  style={{
+                    background: 'none',
+                    border: 'none',
+                    cursor: 'pointer',
+                    padding: '2px',
+                    color: '#525252'
+                  }}
+                >
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <line x1="18" y1="6" x2="6" y2="18"/>
+                    <line x1="6" y1="6" x2="18" y2="18"/>
+                  </svg>
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+
         {/* Input Area */}
         <div style={{
           padding: '16px 24px',
@@ -728,12 +925,35 @@ export default function ChatPage() {
             padding: '12px',
             border: '1px solid #2a2a2a'
           }}>
+            <input
+              ref={fileInputRef}
+              type="file"
+              multiple
+              onChange={handleFileSelect}
+              style={{ display: 'none' }}
+              accept=".txt,.js,.jsx,.ts,.tsx,.py,.json,.md,.css,.html,.xml,.yaml,.yml,.csv,.sql,.sh,.c,.cpp,.java,.go,.rs,.rb,.php"
+            />
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              style={{
+                padding: '8px',
+                background: 'transparent',
+                border: 'none',
+                cursor: 'pointer',
+                color: '#737373'
+              }}
+              title="Adjuntar archivos"
+            >
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/>
+              </svg>
+            </button>
             <textarea
               ref={textareaRef}
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={handleKeyDown}
-              placeholder="Escribe un mensaje..."
+              placeholder="Escribe un mensaje o adjunta archivos..."
               disabled={isLoading}
               style={{
                 flex: 1,
@@ -751,14 +971,14 @@ export default function ChatPage() {
             />
             <button
               onClick={handleSend}
-              disabled={isLoading || !input.trim()}
+              disabled={isLoading || (!input.trim() && attachedFiles.length === 0)}
               style={{
                 padding: '10px 20px',
-                background: input.trim() && !isLoading ? '#e5e5e5' : '#2a2a2a',
-                color: input.trim() && !isLoading ? '#0a0a0a' : '#525252',
+                background: (input.trim() || attachedFiles.length > 0) && !isLoading ? '#e5e5e5' : '#2a2a2a',
+                color: (input.trim() || attachedFiles.length > 0) && !isLoading ? '#0a0a0a' : '#525252',
                 border: 'none',
                 borderRadius: '8px',
-                cursor: input.trim() && !isLoading ? 'pointer' : 'not-allowed',
+                cursor: (input.trim() || attachedFiles.length > 0) && !isLoading ? 'pointer' : 'not-allowed',
                 fontWeight: '500',
                 fontSize: '14px',
                 display: 'flex',
@@ -809,7 +1029,7 @@ export default function ChatPage() {
                 fontWeight: '600',
                 color: '#e5e5e5'
               }}>
-                Configuración de Prompt
+                Configuracion de Prompt
               </h3>
               <button
                 onClick={() => setShowSettings(false)}
@@ -834,14 +1054,14 @@ export default function ChatPage() {
               marginBottom: '16px',
               lineHeight: '1.6'
             }}>
-              Añade instrucciones personalizadas que se enviarán con cada mensaje. 
-              Por ejemplo: {"\"Responde siempre en español\"'"} o {"\"Sé conciso en tus respuestas\""}.
+              Agrega instrucciones personalizadas que se enviaran con cada mensaje. 
+              Por ejemplo: {"\"Responde siempre en espanol\""} o {"\"Se conciso en tus respuestas\""}.
             </p>
             
             <textarea
               value={customPrompt}
               onChange={(e) => setCustomPrompt(e.target.value)}
-              placeholder="Escribe tus instrucciones personalizadas aquí..."
+              placeholder="Escribe tus instrucciones personalizadas aqui..."
               style={{
                 width: '100%',
                 minHeight: '150px',
