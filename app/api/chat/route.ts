@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 
 const COREHUB_API_URL = 'http://93.177.64.145:9200/ia/corehub-v1/chat'
-const COREHUB_API_KEY = 'sk-corehub-x192mASn71'
+const COREHUB_API_KEY = 'anesuri.3415.3dd'
 
 export async function POST(request: NextRequest) {
   try {
@@ -11,7 +11,7 @@ export async function POST(request: NextRequest) {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${COREHUB_API_KEY}`,
+        'X-API-Key': COREHUB_API_KEY,
       },
       body: JSON.stringify(body),
     })
