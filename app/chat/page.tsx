@@ -432,53 +432,15 @@ export default function ChatPage() {
     
     setIsLoading(true)
     try {
-      const assistantMessageId = generateId()
+      const response = await sendMessage(userMessage.content, customPrompt || undefined)
       const assistantMessage: Message = {
-        id: assistantMessageId,
+        id: generateId(),
         role: 'assistant',
-        content: '',
+        content: response,
         timestamp: Date.now()
       }
+      addMessage(currentChatId, assistantMessage)
       setMessages(prev => [...prev, assistantMessage])
-      
-      let fullResponse = ''
-      await sendMessageStream(
-        userMessage.content,
-        chatMode,
-        customPrompt || undefined,
-        {
-          onChunk: (content) => {
-            fullResponse += content
-            setMessages(prev => {
-              const newMessages = [...prev]
-              const lastMsg = newMessages[newMessages.length - 1]
-              if (lastMsg && lastMsg.id === assistantMessageId) {
-                lastMsg.content = fullResponse
-              }
-              return newMessages
-            })
-          },
-          onEnd: () => {
-            const finalMessage: Message = {
-              id: assistantMessageId,
-              role: 'assistant',
-              content: fullResponse,
-              timestamp: Date.now()
-            }
-            addMessage(currentChatId, finalMessage)
-          },
-          onError: (error) => {
-            setMessages(prev => {
-              const newMessages = [...prev]
-              const lastMsg = newMessages[newMessages.length - 1]
-              if (lastMsg && lastMsg.id === assistantMessageId) {
-                lastMsg.content = `Error: ${error}`
-              }
-              return newMessages
-            })
-          }
-        }
-      )
     } catch (error) {
       const errorMessage: Message = {
         id: generateId(),
@@ -1100,64 +1062,8 @@ export default function ChatPage() {
             background: '#141414',
             borderRadius: '12px',
             padding: '12px',
-            border: '1px solid #2a2a2a',
-            alignItems: 'flex-end'
+            border: '1px solid #2a2a2a'
           }}>
-            {/* Mode Toggle */}
-            <div style={{
-              display: 'flex',
-              background: '#0a0a0a',
-              borderRadius: '8px',
-              padding: '4px',
-              gap: '2px'
-            }}>
-              <button
-                onClick={() => setChatMode('chat')}
-                style={{
-                  padding: '6px 12px',
-                  background: chatMode === 'chat' ? '#2a2a2a' : 'transparent',
-                  border: 'none',
-                  borderRadius: '6px',
-                  color: chatMode === 'chat' ? '#e5e5e5' : '#737373',
-                  fontSize: '12px',
-                  fontWeight: '500',
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '4px',
-                  transition: 'all 0.15s'
-                }}
-              >
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
-                </svg>
-                Chat
-              </button>
-              <button
-                onClick={() => setChatMode('code')}
-                style={{
-                  padding: '6px 12px',
-                  background: chatMode === 'code' ? '#2a2a2a' : 'transparent',
-                  border: 'none',
-                  borderRadius: '6px',
-                  color: chatMode === 'code' ? '#e5e5e5' : '#737373',
-                  fontSize: '12px',
-                  fontWeight: '500',
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '4px',
-                  transition: 'all 0.15s'
-                }}
-              >
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <polyline points="16 18 22 12 16 6"/>
-                  <polyline points="8 6 2 12 8 18"/>
-                </svg>
-                Code
-              </button>
-            </div>
-            
             <input
               ref={fileInputRef}
               type="file"
@@ -1186,7 +1092,7 @@ export default function ChatPage() {
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={handleKeyDown}
-              placeholder={chatMode === 'code' ? "Describe el codigo que necesitas..." : "Escribe un mensaje..."}
+              placeholder="Escribe un mensaje o adjunta archivos..."
               disabled={isLoading}
               style={{
                 flex: 1,
