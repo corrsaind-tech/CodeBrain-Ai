@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 
-const COREHUB_API_URL = 'http://93.177.64.145:9200/ia/corehub-v1/chat'
+const COREHUB_API_URL = 'http://93.177.64.145:9200/ia/corehub-v2/chat'
 const COREHUB_API_KEY = 'anesuri.3415.3dd'
 
 export async function POST(request: NextRequest) {
