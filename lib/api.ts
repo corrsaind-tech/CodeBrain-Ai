@@ -1,22 +1,15 @@
-export interface ChatOptions {
-  model?: 'auto' | 'corehub-coder.1' | 'corehub-coder.1.2' | 'corehub-coder.1-instruct'
-  force_coding?: boolean
-  system_prompt?: string
-}
+export async function sendMessage(prompt: string, customSystemPrompt?: string): Promise<string> {
+  const fullPrompt = customSystemPrompt 
+    ? `[System Instructions: ${customSystemPrompt}]\n\nUser: ${prompt}`
+    : prompt
 
-export async function sendMessage(prompt: string, options?: ChatOptions): Promise<{ response: string; model_name?: string; response_time_ms?: number }> {
   try {
     const response = await fetch('/api/chat', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({
-        prompt,
-        model: options?.model || 'auto',
-        force_coding: options?.force_coding || false,
-        system_prompt: options?.system_prompt,
-      })
+      body: JSON.stringify({ prompt: fullPrompt })
     })
 
     if (!response.ok) {
@@ -25,12 +18,8 @@ export async function sendMessage(prompt: string, options?: ChatOptions): Promis
 
     const data = await response.json()
     
-    if (data.response) {
-      return {
-        response: data.response,
-        model_name: data.model_name,
-        response_time_ms: data.response_time_ms,
-      }
+    if (data.success && data.response) {
+      return data.response
     } else if (data.error) {
       throw new Error(data.error)
     } else {
@@ -40,6 +29,6 @@ export async function sendMessage(prompt: string, options?: ChatOptions): Promis
     if (error instanceof Error) {
       throw error
     }
-    throw new Error('Error de conexion con el servidor')
+    throw new Error('Error de conexión con el servidor')
   }
 }

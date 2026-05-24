@@ -178,8 +178,6 @@ export default function ChatPage() {
   const [editingMessageId, setEditingMessageId] = useState<string | null>(null)
   const [editContent, setEditContent] = useState('')
   const [attachedFiles, setAttachedFiles] = useState<File[]>([])
-  const [selectedModel, setSelectedModel] = useState<'auto' | 'corehub-coder.1' | 'corehub-coder.1.2' | 'corehub-coder.1-instruct'>('auto')
-  const [forceCoding, setForceCoding] = useState(false)
   const [contextMenu, setContextMenu] = useState<ContextMenuState>({
     visible: false,
     x: 0,
@@ -253,8 +251,7 @@ export default function ChatPage() {
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files
     if (files && files.length > 0) {
-      const newFiles = Array.from(files)
-      setAttachedFiles(prev => [...prev, ...newFiles])
+      setAttachedFiles(prev => [...prev, ...Array.from(files)])
     }
     if (fileInputRef.current) {
       fileInputRef.current.value = ''
@@ -331,16 +328,12 @@ export default function ChatPage() {
     refreshChats()
 
     try {
-    const result = await sendMessage(messageContent, {
-      model: selectedModel,
-      force_coding: forceCoding,
-      system_prompt: customPrompt || undefined,
-    })
-    const assistantMessage: Message = {
-      id: generateId(),
-      role: 'assistant',
-      content: result.response,
-      timestamp: Date.now()
+      const response = await sendMessage(messageContent, customPrompt || undefined)
+      const assistantMessage: Message = {
+        id: generateId(),
+        role: 'assistant',
+        content: response,
+        timestamp: Date.now()
       }
       addMessage(chatId, assistantMessage)
       setMessages(prev => [...prev, assistantMessage])
@@ -401,16 +394,12 @@ export default function ChatPage() {
     if (messages[messageIndex].role === 'user') {
       setIsLoading(true)
       try {
-      const result = await sendMessage(editContent.trim(), {
-        model: selectedModel,
-        force_coding: forceCoding,
-        system_prompt: customPrompt || undefined,
-      })
-      const assistantMessage: Message = {
-        id: generateId(),
-        role: 'assistant',
-        content: result.response,
-        timestamp: Date.now()
+        const response = await sendMessage(editContent.trim(), customPrompt || undefined)
+        const assistantMessage: Message = {
+          id: generateId(),
+          role: 'assistant',
+          content: response,
+          timestamp: Date.now()
         }
         addMessage(currentChatId, assistantMessage)
         setMessages(prev => [...prev, assistantMessage])
@@ -443,19 +432,53 @@ export default function ChatPage() {
     
     setIsLoading(true)
     try {
-      const result = await sendMessage(userMessage.content, {
-        model: selectedModel,
-        force_coding: forceCoding,
-        system_prompt: customPrompt || undefined,
-      })
+      const assistantMessageId = generateId()
       const assistantMessage: Message = {
-        id: generateId(),
+        id: assistantMessageId,
         role: 'assistant',
-        content: result.response,
+        content: '',
         timestamp: Date.now()
       }
-      addMessage(currentChatId, assistantMessage)
       setMessages(prev => [...prev, assistantMessage])
+      
+      let fullResponse = ''
+      await sendMessageStream(
+        userMessage.content,
+        chatMode,
+        customPrompt || undefined,
+        {
+          onChunk: (content) => {
+            fullResponse += content
+            setMessages(prev => {
+              const newMessages = [...prev]
+              const lastMsg = newMessages[newMessages.length - 1]
+              if (lastMsg && lastMsg.id === assistantMessageId) {
+                lastMsg.content = fullResponse
+              }
+              return newMessages
+            })
+          },
+          onEnd: () => {
+            const finalMessage: Message = {
+              id: assistantMessageId,
+              role: 'assistant',
+              content: fullResponse,
+              timestamp: Date.now()
+            }
+            addMessage(currentChatId, finalMessage)
+          },
+          onError: (error) => {
+            setMessages(prev => {
+              const newMessages = [...prev]
+              const lastMsg = newMessages[newMessages.length - 1]
+              if (lastMsg && lastMsg.id === assistantMessageId) {
+                lastMsg.content = `Error: ${error}`
+              }
+              return newMessages
+            })
+          }
+        }
+      )
     } catch (error) {
       const errorMessage: Message = {
         id: generateId(),
@@ -1066,58 +1089,6 @@ export default function ChatPage() {
           </div>
         )}
 
-        {/* Model Selector */}
-        <div style={{
-          padding: '12px 24px',
-          borderTop: '1px solid #1a1a1a',
-          display: 'flex',
-          gap: '16px',
-          alignItems: 'center'
-        }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <span style={{ fontSize: '12px', color: '#737373' }}>Modelo:</span>
-            <select
-              value={selectedModel}
-              onChange={(e) => setSelectedModel(e.target.value as typeof selectedModel)}
-              style={{
-                background: '#1a1a1a',
-                border: '1px solid #2a2a2a',
-                borderRadius: '6px',
-                padding: '6px 10px',
-                color: '#e5e5e5',
-                fontSize: '12px',
-                cursor: 'pointer',
-                outline: 'none'
-              }}
-            >
-              <option value="auto">Auto (detecta automaticamente)</option>
-              <option value="corehub-coder.1">CodeBrain Coder v1</option>
-              <option value="corehub-coder.1.2">CodeBrain Coder v1.2</option>
-              <option value="corehub-coder.1-instruct">CodeBrain Coder Instruct</option>
-            </select>
-          </div>
-          <label style={{ 
-            display: 'flex', 
-            alignItems: 'center', 
-            gap: '6px', 
-            cursor: 'pointer',
-            fontSize: '12px',
-            color: '#737373'
-          }}>
-            <input
-              type="checkbox"
-              checked={forceCoding}
-              onChange={(e) => setForceCoding(e.target.checked)}
-              style={{
-                width: '14px',
-                height: '14px',
-                accentColor: '#4a4a4a'
-              }}
-            />
-            Forzar modo codigo
-          </label>
-        </div>
-
         {/* Input Area */}
         <div style={{
           padding: '16px 24px',
@@ -1129,8 +1100,64 @@ export default function ChatPage() {
             background: '#141414',
             borderRadius: '12px',
             padding: '12px',
-            border: '1px solid #2a2a2a'
+            border: '1px solid #2a2a2a',
+            alignItems: 'flex-end'
           }}>
+            {/* Mode Toggle */}
+            <div style={{
+              display: 'flex',
+              background: '#0a0a0a',
+              borderRadius: '8px',
+              padding: '4px',
+              gap: '2px'
+            }}>
+              <button
+                onClick={() => setChatMode('chat')}
+                style={{
+                  padding: '6px 12px',
+                  background: chatMode === 'chat' ? '#2a2a2a' : 'transparent',
+                  border: 'none',
+                  borderRadius: '6px',
+                  color: chatMode === 'chat' ? '#e5e5e5' : '#737373',
+                  fontSize: '12px',
+                  fontWeight: '500',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '4px',
+                  transition: 'all 0.15s'
+                }}
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+                </svg>
+                Chat
+              </button>
+              <button
+                onClick={() => setChatMode('code')}
+                style={{
+                  padding: '6px 12px',
+                  background: chatMode === 'code' ? '#2a2a2a' : 'transparent',
+                  border: 'none',
+                  borderRadius: '6px',
+                  color: chatMode === 'code' ? '#e5e5e5' : '#737373',
+                  fontSize: '12px',
+                  fontWeight: '500',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '4px',
+                  transition: 'all 0.15s'
+                }}
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <polyline points="16 18 22 12 16 6"/>
+                  <polyline points="8 6 2 12 8 18"/>
+                </svg>
+                Code
+              </button>
+            </div>
+            
             <input
               ref={fileInputRef}
               type="file"
@@ -1159,7 +1186,7 @@ export default function ChatPage() {
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={handleKeyDown}
-              placeholder="Escribe un mensaje o adjunta archivos..."
+              placeholder={chatMode === 'code' ? "Describe el codigo que necesitas..." : "Escribe un mensaje..."}
               disabled={isLoading}
               style={{
                 flex: 1,
