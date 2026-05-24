@@ -7,13 +7,20 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
     
+    const payload = {
+      prompt: body.prompt,
+      model: body.model || 'auto',
+      force_coding: body.force_coding || false,
+      system_prompt: body.system_prompt || undefined,
+    }
+    
     const response = await fetch(COREHUB_API_URL, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'X-API-Key': COREHUB_API_KEY,
       },
-      body: JSON.stringify(body),
+      body: JSON.stringify(payload),
     })
 
     if (!response.ok) {

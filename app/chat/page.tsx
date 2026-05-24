@@ -178,6 +178,8 @@ export default function ChatPage() {
   const [editingMessageId, setEditingMessageId] = useState<string | null>(null)
   const [editContent, setEditContent] = useState('')
   const [attachedFiles, setAttachedFiles] = useState<File[]>([])
+  const [selectedModel, setSelectedModel] = useState<'auto' | 'corehub-coder.1' | 'corehub-coder.1.2' | 'corehub-coder.1-instruct'>('auto')
+  const [forceCoding, setForceCoding] = useState(false)
   const [contextMenu, setContextMenu] = useState<ContextMenuState>({
     visible: false,
     x: 0,
@@ -249,21 +251,10 @@ export default function ChatPage() {
   }
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    console.log('[v0] handleFileSelect called')
-    console.log('[v0] e.target.files:', e.target.files)
     const files = e.target.files
     if (files && files.length > 0) {
-      console.log('[v0] Files found:', files.length)
       const newFiles = Array.from(files)
-      console.log('[v0] Adding files:', newFiles.map(f => f.name))
-      setAttachedFiles(prev => {
-        console.log('[v0] Previous attached files:', prev.length)
-        const updated = [...prev, ...newFiles]
-        console.log('[v0] Updated attached files:', updated.length)
-        return updated
-      })
-    } else {
-      console.log('[v0] No files selected')
+      setAttachedFiles(prev => [...prev, ...newFiles])
     }
     if (fileInputRef.current) {
       fileInputRef.current.value = ''
@@ -340,12 +331,16 @@ export default function ChatPage() {
     refreshChats()
 
     try {
-      const response = await sendMessage(messageContent, customPrompt || undefined)
-      const assistantMessage: Message = {
-        id: generateId(),
-        role: 'assistant',
-        content: response,
-        timestamp: Date.now()
+    const result = await sendMessage(messageContent, {
+      model: selectedModel,
+      force_coding: forceCoding,
+      system_prompt: customPrompt || undefined,
+    })
+    const assistantMessage: Message = {
+      id: generateId(),
+      role: 'assistant',
+      content: result.response,
+      timestamp: Date.now()
       }
       addMessage(chatId, assistantMessage)
       setMessages(prev => [...prev, assistantMessage])
@@ -406,12 +401,16 @@ export default function ChatPage() {
     if (messages[messageIndex].role === 'user') {
       setIsLoading(true)
       try {
-        const response = await sendMessage(editContent.trim(), customPrompt || undefined)
-        const assistantMessage: Message = {
-          id: generateId(),
-          role: 'assistant',
-          content: response,
-          timestamp: Date.now()
+      const result = await sendMessage(editContent.trim(), {
+        model: selectedModel,
+        force_coding: forceCoding,
+        system_prompt: customPrompt || undefined,
+      })
+      const assistantMessage: Message = {
+        id: generateId(),
+        role: 'assistant',
+        content: result.response,
+        timestamp: Date.now()
         }
         addMessage(currentChatId, assistantMessage)
         setMessages(prev => [...prev, assistantMessage])
@@ -444,11 +443,15 @@ export default function ChatPage() {
     
     setIsLoading(true)
     try {
-      const response = await sendMessage(userMessage.content, customPrompt || undefined)
+      const result = await sendMessage(userMessage.content, {
+        model: selectedModel,
+        force_coding: forceCoding,
+        system_prompt: customPrompt || undefined,
+      })
       const assistantMessage: Message = {
         id: generateId(),
         role: 'assistant',
-        content: response,
+        content: result.response,
         timestamp: Date.now()
       }
       addMessage(currentChatId, assistantMessage)
@@ -1062,6 +1065,58 @@ export default function ChatPage() {
             ))}
           </div>
         )}
+
+        {/* Model Selector */}
+        <div style={{
+          padding: '12px 24px',
+          borderTop: '1px solid #1a1a1a',
+          display: 'flex',
+          gap: '16px',
+          alignItems: 'center'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <span style={{ fontSize: '12px', color: '#737373' }}>Modelo:</span>
+            <select
+              value={selectedModel}
+              onChange={(e) => setSelectedModel(e.target.value as typeof selectedModel)}
+              style={{
+                background: '#1a1a1a',
+                border: '1px solid #2a2a2a',
+                borderRadius: '6px',
+                padding: '6px 10px',
+                color: '#e5e5e5',
+                fontSize: '12px',
+                cursor: 'pointer',
+                outline: 'none'
+              }}
+            >
+              <option value="auto">Auto (detecta automaticamente)</option>
+              <option value="corehub-coder.1">CodeBrain Coder v1</option>
+              <option value="corehub-coder.1.2">CodeBrain Coder v1.2</option>
+              <option value="corehub-coder.1-instruct">CodeBrain Coder Instruct</option>
+            </select>
+          </div>
+          <label style={{ 
+            display: 'flex', 
+            alignItems: 'center', 
+            gap: '6px', 
+            cursor: 'pointer',
+            fontSize: '12px',
+            color: '#737373'
+          }}>
+            <input
+              type="checkbox"
+              checked={forceCoding}
+              onChange={(e) => setForceCoding(e.target.checked)}
+              style={{
+                width: '14px',
+                height: '14px',
+                accentColor: '#4a4a4a'
+              }}
+            />
+            Forzar modo codigo
+          </label>
+        </div>
 
         {/* Input Area */}
         <div style={{
